@@ -1,7 +1,33 @@
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
 venv/
 .venv/
+env/
 
-.env.example
+# Local environment files (keep template files tracked)
+.env
+.env.*
+!.env.example
+
+# Test and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Coverage outputs
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/

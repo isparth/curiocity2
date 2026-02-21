@@ -1,0 +1,12 @@
+# OS / editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Root-level virtual environments
+venv/
+.venv/
+env/
+
+# Generic logs
+*.log
