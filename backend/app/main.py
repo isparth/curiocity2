@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 
 from app.config import settings
 from app.models.schemas import (
@@ -72,4 +72,4 @@ async def speech_to_text(audio: UploadFile = File(...)):
 @app.post("/api/text-to-speech")
 async def text_to_speech(req: TextToSpeechRequest):
     audio_stream = await generate_speech(req.text, req.voice_id)
-    return StreamingResponse(audio_stream, media_type="audio/mpeg")
+    return Response(content=audio_stream.getvalue(), media_type="audio/mpeg")

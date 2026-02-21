@@ -8,7 +8,7 @@ ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
 
 
 async def design_voice(voice_description: str, preview_text: str) -> str:
-    """Call ElevenLabs Voice Design API, return generated_voice_id."""
+    """Call ElevenLabs Voice Design API and return a saved, reusable voice_id."""
     # Clamp voice_description to 20-1000 chars
     desc = voice_description[:1000]
     if len(desc) < 20:
@@ -30,7 +30,25 @@ async def design_voice(voice_description: str, preview_text: str) -> str:
         )
         response.raise_for_status()
         data = response.json()
-        return data["previews"][0]["generated_voice_id"]
+        generated_voice_id = data["previews"][0]["generated_voice_id"]
+
+        save_url = f"{ELEVENLABS_BASE}/text-to-voice/create-voice-from-preview"
+        save_response = await client.post(
+            save_url,
+            headers={
+                "xi-api-key": settings.elevenlabs_api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "voice_name": "CurioCity Character",
+                "voice_description": desc,
+                "generated_voice_id": generated_voice_id,
+            },
+            timeout=30.0,
+        )
+        save_response.raise_for_status()
+        save_data = save_response.json()
+        return save_data["voice_id"]
 
 
 async def generate_speech(text: str, voice_id: str | None = None) -> io.BytesIO:

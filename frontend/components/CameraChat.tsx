@@ -16,6 +16,13 @@ import TopBar from "./TopBar";
 import LoadingOverlay from "./LoadingOverlay";
 import ChatPane from "./ChatPane";
 
+type IdentifyResult = {
+  entity: string;
+  greeting: string;
+  character_profile: CharacterProfile;
+  voice_id: string;
+};
+
 export default function CameraChat() {
   const [state, setState] = useState<AppState>("CAMERA_READY");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -26,13 +33,9 @@ export default function CameraChat() {
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const cameraRef = useRef<CameraFeedHandle>(null);
 
-  // Ref to hold the identify result while the loading overlay animates
-  const identifyResultRef = useRef<{
-    entity: string;
-    greeting: string;
-    character_profile: CharacterProfile;
-    voice_id: string;
-  } | null>(null);
+  // Hold the identify request result while loading animation plays.
+  const identifyResultRef = useRef<IdentifyResult | null>(null);
+  const identifyPromiseRef = useRef<Promise<IdentifyResult | null> | null>(null);
 
   const { startRecording, stopRecording } = useAudioRecorder();
   const { play } = useAudioPlayer();
@@ -45,6 +48,7 @@ export default function CameraChat() {
     setCharacterProfile(null);
     setVoiceId(null);
     identifyResultRef.current = null;
+    identifyPromiseRef.current = null;
   }, []);
 
   const handleShutterTap = () => {
@@ -54,20 +58,32 @@ export default function CameraChat() {
     setCapturedPhoto(photo);
     setState("CAPTURED_LOADING");
 
-    // Fire off the identify call immediately (runs behind loading overlay)
+    identifyResultRef.current = null;
+
+    // Fire off identify immediately; loading completion waits on this promise.
     if (photo) {
-      identifyObject(photo)
+      identifyPromiseRef.current = identifyObject(photo)
         .then((result) => {
           identifyResultRef.current = result;
+          return result;
         })
         .catch(() => {
           identifyResultRef.current = null;
+          return null;
         });
+    } else {
+      identifyPromiseRef.current = Promise.resolve(null);
     }
   };
 
-  const handleLoadingComplete = useCallback(() => {
-    const result = identifyResultRef.current;
+  const handleLoadingComplete = useCallback(async () => {
+    const identifyPromise = identifyPromiseRef.current;
+    const result = identifyPromise
+      ? await identifyPromise
+      : identifyResultRef.current;
+
+    identifyPromiseRef.current = null;
+
     if (result) {
       setEntityName(result.entity);
       setCharacterProfile(result.character_profile);
@@ -97,53 +113,51 @@ export default function CameraChat() {
         text: userText,
       };
 
-      setMessages((prev) => {
-        const updated = [...prev, userMsg];
-        const entity = entityName || "Mystery Thing";
-        const profile = characterProfile;
-        const vid = voiceId;
+      const updatedMessages = [...messages, userMsg];
+      setMessages(updatedMessages);
 
-        setState("SPEAKING");
+      const entity = entityName || "Mystery Thing";
+      const profile = characterProfile;
+      const vid = voiceId;
 
-        if (profile) {
-          const history = updated.map((m) => ({ role: m.role, text: m.text }));
+      setState("SPEAKING");
 
-          chat(entity, profile, history)
-            .then(async ({ response }) => {
-              const assistantMsg: ChatMessage = {
-                id: `assistant-${Date.now()}`,
-                role: "assistant",
-                text: response,
-              };
-              setMessages((p) => [...p, assistantMsg]);
+      if (!profile) {
+        setState("TALKING_READY");
+        return;
+      }
 
-              if (vid) {
-                try {
-                  const audioBlob = await textToSpeech(response, entity, vid);
-                  await play(audioBlob);
-                } catch {
-                  // TTS failed — still show the text response
-                }
-              }
-              setState("TALKING_READY");
-            })
-            .catch(() => {
-              const fallback: ChatMessage = {
-                id: `assistant-${Date.now()}`,
-                role: "assistant",
-                text: "Hmm, I got confused! Can you try again?",
-              };
-              setMessages((p) => [...p, fallback]);
-              setState("TALKING_READY");
-            });
-        } else {
-          setState("TALKING_READY");
+      const history = updatedMessages.map((m) => ({ role: m.role, text: m.text }));
+
+      try {
+        const { response } = await chat(entity, profile, history);
+        const assistantMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: response,
+        };
+        setMessages((p) => [...p, assistantMsg]);
+
+        if (vid) {
+          try {
+            const audioBlob = await textToSpeech(response, entity, vid);
+            await play(audioBlob);
+          } catch {
+            // TTS failed — still show the text response
+          }
         }
-
-        return updated;
-      });
+      } catch {
+        const fallback: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: "Hmm, I got confused! Can you try again?",
+        };
+        setMessages((p) => [...p, fallback]);
+      } finally {
+        setState("TALKING_READY");
+      }
     },
-    [entityName, characterProfile, voiceId, play]
+    [messages, entityName, characterProfile, voiceId, play]
   );
 
   const handleMicTap = async () => {
