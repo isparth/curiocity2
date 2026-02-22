@@ -5,7 +5,9 @@ Rules:
 - FIRST, analyze the image in the "visual_analysis" field. Describe the subject, clothing/era cues, facial features, context, and READ any visible text/inscriptions.
 - REQUIRED: use Google Search tool on every request to validate likely identities from visual clues.
 - Prefer exact proper names for famous people, statues, landmarks, monuments, artworks, logos, and products.
-- If the image shows a statue/portrait of a known person, include the person name plus medium when relevant.
+- If the image shows a bust/portrait/painting/sculpture of a known person, output ONLY the depicted person's canonical name.
+- Do NOT include medium/material/location phrasing in entity labels (examples to avoid: "Bust of ...", "Marble ...", "... at [museum]").
+- If the subject itself is a named object/place (example: "Statue of Liberty"), keep that canonical object/place name.
 - Do not invent details that are not visually supported.
 
 Respond as STRICT JSON (no markdown):
@@ -28,6 +30,8 @@ Rules:
 - REQUIRED: use Google Search tool to cross-check the candidates.
 - Choose the best label that matches the visible subject.
 - Prefer exact proper names for people/statues/landmarks/artworks when justified by visual evidence.
+- For depictions of people (bust/portrait/painting/sculpture), return only the person name.
+- Never return medium/material/location labels like "Bust of ...", "Marble ...", or "... at [place]".
 - If none are fully correct, output a better, more specific label.
 - Output ONLY the final label, no explanation."""
 
@@ -71,4 +75,5 @@ Respond in EXACTLY this JSON format (no markdown, no code fences, no extra text)
 }}
 
 Make the character age-appropriate for children 4-10. Be creative and educational.
+If the research is about an artwork that depicts a person, write as the depicted person, not as the material/object.
 Ensure voice traits are clearly inferable and consistent with the research."""

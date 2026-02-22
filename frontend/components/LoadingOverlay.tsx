@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 interface LoadingOverlayProps {
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
 }
 
 const STEPS = [
@@ -56,28 +56,22 @@ function Checkmark() {
 
 export default function LoadingOverlay({ onComplete }: LoadingOverlayProps) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [fading, setFading] = useState(false);
 
   useEffect(() => {
-    if (currentStep < STEPS.length) {
-      const timer = setTimeout(() => {
-        setCurrentStep((s) => s + 1);
-      }, 1500);
-      return () => clearTimeout(timer);
-    } else {
-      // All steps done — fade out then call onComplete
-      setFading(true);
-      const timer = setTimeout(onComplete, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [currentStep, onComplete]);
+    const timer = setInterval(() => {
+      setCurrentStep((step) => Math.min(step + 1, STEPS.length - 1));
+    }, 700);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve(onComplete()).catch(() => {
+      // Parent handles fallback state transitions.
+    });
+  }, [onComplete]);
 
   return (
-    <div
-      className={`fixed inset-0 z-20 flex items-center justify-center px-6 ${
-        fading ? "animate-fade-out" : "animate-fade-in"
-      }`}
-    >
+    <div className="fixed inset-0 z-20 flex items-center justify-center px-6 animate-fade-in">
       <div className="glass-heavy relative overflow-hidden p-8 w-full max-w-xs rounded-2xl">
         {/* Scanning pulse background */}
         <div className="absolute inset-0 bg-teal/5 animate-scanning-pulse rounded-2xl" />

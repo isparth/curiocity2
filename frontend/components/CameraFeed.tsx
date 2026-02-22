@@ -11,6 +11,9 @@ export interface CameraFeedHandle {
   capturePhoto: () => string | null;
 }
 
+const MAX_CAPTURE_DIMENSION = 960;
+const JPEG_QUALITY = 0.72;
+
 const CameraFeed = forwardRef<CameraFeedHandle, CameraFeedProps>(
   function CameraFeed({ capturedPhoto, showLiveCamera }, ref) {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -67,13 +70,20 @@ const CameraFeed = forwardRef<CameraFeedHandle, CameraFeedProps>(
         const canvas = canvasRef.current;
         if (!video || !canvas) return null;
 
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
+        const sourceWidth = video.videoWidth || 1280;
+        const sourceHeight = video.videoHeight || 720;
+        const scale = Math.min(
+          1,
+          MAX_CAPTURE_DIMENSION / Math.max(sourceWidth, sourceHeight)
+        );
+
+        canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+        canvas.height = Math.max(1, Math.round(sourceHeight * scale));
         const ctx = canvas.getContext("2d");
         if (!ctx) return null;
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL("image/jpeg", 0.85);
+        return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
       },
     }));
 

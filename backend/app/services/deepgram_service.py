@@ -1,11 +1,22 @@
+import asyncio
+
 from deepgram import DeepgramClient, PrerecordedOptions
 
 from app.config import settings
 from app.models.schemas import SpeechToTextResponse
 
+_client: DeepgramClient | None = None
 
-async def transcribe(audio_bytes: bytes) -> SpeechToTextResponse:
-    client = DeepgramClient(settings.deepgram_api_key)
+
+def _get_client() -> DeepgramClient:
+    global _client
+    if _client is None:
+        _client = DeepgramClient(settings.deepgram_api_key)
+    return _client
+
+
+def _transcribe_sync(audio_bytes: bytes) -> SpeechToTextResponse:
+    client = _get_client()
 
     payload = {"buffer": audio_bytes}
     options = PrerecordedOptions(
@@ -22,3 +33,7 @@ async def transcribe(audio_bytes: bytes) -> SpeechToTextResponse:
         transcript=alternative.transcript,
         confidence=alternative.confidence,
     )
+
+
+async def transcribe(audio_bytes: bytes) -> SpeechToTextResponse:
+    return await asyncio.to_thread(_transcribe_sync, audio_bytes)

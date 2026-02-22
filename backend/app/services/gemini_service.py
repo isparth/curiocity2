@@ -1,6 +1,8 @@
-import base64
+import asyncio
 import json
 import logging
+import re
+from functools import partial
 from typing import Any
 
 from google import genai
@@ -19,6 +21,7 @@ from app.prompts.chat_prompt import CHAT_SYSTEM_PROMPT_TEMPLATE
 from app.services.elevenlabs_service import design_voice
 
 logger = logging.getLogger(__name__)
+_client: genai.Client | None = None
 
 MODEL = settings.gemini_model.strip() or "gemini-3.1-pro-preview"
 RESEARCH_MODEL = (
@@ -32,16 +35,31 @@ MODEL_FALLBACKS = [
     "gemini-1.5-flash",
 ]
 
+DEPICTION_PREFIX_RE = re.compile(
+    r"^(?:the\s+)?(?:(?:marble|bronze|stone|wooden)\s+)?"
+    r"(?:bust|portrait|painting|sculpture|carving|engraving|relief|fresco|mosaic|drawing)"
+    r"\s+of\s+(.+)$",
+    re.IGNORECASE,
+)
+DEPICTION_LOCATION_SUFFIX_RE = re.compile(r"^(.+?)\s+(?:at|in)\s+.+$", re.IGNORECASE)
+DEPICTION_PAREN_SUFFIX_RE = re.compile(
+    r"^(.+?)\s+\((?:marble|bronze|stone|wooden|bust|portrait|painting|sculpture|carving).*\)$",
+    re.IGNORECASE,
+)
+
 
 def _get_client() -> genai.Client:
-    return genai.Client(api_key=settings.gemini_api_key)
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.gemini_api_key)
+    return _client
 
 
-def _decode_data_uri(data_uri: str) -> tuple[str, bytes]:
-    """Extract mime type and raw bytes from a data URI."""
+def _decode_data_uri(data_uri: str) -> tuple[str, str]:
+    """Extract mime type and base64 payload from a data URI."""
     header, b64_data = data_uri.split(",", 1)
     mime_type = header.split(":")[1].split(";")[0]
-    return mime_type, base64.b64decode(b64_data)
+    return mime_type, b64_data
 
 
 def _parse_json_response(text: str) -> dict:
@@ -56,6 +74,32 @@ def _clean_label(value: str) -> str:
     return value.strip().strip('"').strip("'").strip().strip(".")
 
 
+def _normalize_character_entity_label(value: str) -> str:
+    """
+    Normalize depiction labels so character identity is the depicted character/person,
+    not the medium or display context.
+    """
+    label = _clean_label(value)
+    if not label:
+        return label
+
+    match = DEPICTION_PREFIX_RE.match(label)
+    if not match:
+        return label
+
+    normalized = _clean_label(match.group(1))
+
+    location_match = DEPICTION_LOCATION_SUFFIX_RE.match(normalized)
+    if location_match:
+        normalized = _clean_label(location_match.group(1))
+
+    paren_match = DEPICTION_PAREN_SUFFIX_RE.match(normalized)
+    if paren_match:
+        normalized = _clean_label(paren_match.group(1))
+
+    return normalized or label
+
+
 def _extract_identify_data(text: str) -> tuple[str, list[str], str, float]:
     """
     Parse identify model output.
@@ -63,13 +107,13 @@ def _extract_identify_data(text: str) -> tuple[str, list[str], str, float]:
     """
     try:
         data = _parse_json_response(text)
-        entity = _clean_label(str(data.get("entity", "")))
+        entity = _normalize_character_entity_label(str(data.get("entity", "")))
         alternatives_raw = data.get("alternatives", [])
         alternatives = []
         if isinstance(alternatives_raw, list):
             for item in alternatives_raw:
                 if isinstance(item, str):
-                    label = _clean_label(item)
+                    label = _normalize_character_entity_label(item)
                     if label:
                         alternatives.append(label)
 
@@ -82,7 +126,7 @@ def _extract_identify_data(text: str) -> tuple[str, list[str], str, float]:
         return entity, alternatives, specificity, confidence
     except Exception:
         # Backward-compatible fallback if model returns plain text.
-        return _clean_label(text), [], "", 0.0
+        return _normalize_character_entity_label(text), [], "", 0.0
 
 
 def _build_voice_design_description(
@@ -97,7 +141,9 @@ def _build_voice_design_description(
     )
 
 
-def _build_identify_contents(mime_type: str, image_bytes: bytes, prompt: str) -> list[dict]:
+def _build_identify_contents(
+    mime_type: str, image_b64: str, prompt: str
+) -> list[dict]:
     return [
         {
             "role": "user",
@@ -106,7 +152,7 @@ def _build_identify_contents(mime_type: str, image_bytes: bytes, prompt: str) ->
                 {
                     "inline_data": {
                         "mime_type": mime_type,
-                        "data": base64.b64encode(image_bytes).decode(),
+                        "data": image_b64,
                     }
                 },
             ],
@@ -146,7 +192,7 @@ def _merge_generate_config(config: dict | None = None, use_google_search: bool =
     return merged or None
 
 
-def _generate_with_fallback(
+async def _generate_with_fallback(
     client: genai.Client,
     contents: Any,
     config: dict | None = None,
@@ -160,10 +206,13 @@ def _generate_with_fallback(
     last_error = None
     for model in _model_candidates(preferred_models):
         try:
-            return client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=merged_config,
+            return await asyncio.to_thread(
+                partial(
+                    client.models.generate_content,
+                    model=model,
+                    contents=contents,
+                    config=merged_config,
+                ),
             )
         except ClientError as err:
             last_error = err
@@ -183,7 +232,7 @@ def _generate_with_fallback(
                 "Google Search tool path failed (%s). Retrying without search tool.",
                 last_error.message,
             )
-            return _generate_with_fallback(
+            return await _generate_with_fallback(
                 client=client,
                 contents=contents,
                 config=config,
@@ -196,14 +245,14 @@ def _generate_with_fallback(
 
 async def identify_research_and_create(image_data_uri: str) -> IdentifyResponse:
     client = _get_client()
-    mime_type, image_bytes = _decode_data_uri(image_data_uri)
+    mime_type, image_b64 = _decode_data_uri(image_data_uri)
 
     # --- STEP 1: Identify the object ---
-    identify_response = _generate_with_fallback(
+    identify_response = await _generate_with_fallback(
         client=client,
         contents=_build_identify_contents(
             mime_type=mime_type,
-            image_bytes=image_bytes,
+            image_b64=image_b64,
             prompt=IDENTIFY_PROMPT,
         ),
         use_google_search=True,
@@ -227,24 +276,27 @@ async def identify_research_and_create(image_data_uri: str) -> IdentifyResponse:
             disambiguate_prompt = IDENTIFY_DISAMBIGUATE_PROMPT_TEMPLATE.format(
                 candidates="\n".join(f"- {c}" for c in deduped_candidates[:6])
             )
-            disambiguate_response = _generate_with_fallback(
+            disambiguate_response = await _generate_with_fallback(
                 client=client,
                 contents=_build_identify_contents(
                     mime_type=mime_type,
-                    image_bytes=image_bytes,
+                    image_b64=image_b64,
                     prompt=disambiguate_prompt,
                 ),
                 use_google_search=True,
             )
-            disambiguated = _clean_label(disambiguate_response.text)
+            disambiguated = _normalize_character_entity_label(
+                disambiguate_response.text
+            )
             if disambiguated:
                 entity = disambiguated
 
+    entity = _normalize_character_entity_label(entity)
     if not entity:
         entity = "Unknown object"
 
     # --- STEP 2: Research the entity ---
-    research_response = _generate_with_fallback(
+    research_response = await _generate_with_fallback(
         client=client,
         contents=RESEARCH_PROMPT_TEMPLATE.format(entity=entity),
         preferred_models=[RESEARCH_MODEL],
@@ -253,7 +305,7 @@ async def identify_research_and_create(image_data_uri: str) -> IdentifyResponse:
     research = research_response.text.strip()
 
     # --- STEP 3: Create character profile ---
-    character_response = _generate_with_fallback(
+    character_response = await _generate_with_fallback(
         client=client,
         contents=CHARACTER_CREATION_PROMPT_TEMPLATE.format(
             entity=entity, research=research
@@ -309,7 +361,7 @@ async def generate_chat_response(
         role = "user" if msg.role == "user" else "model"
         contents.append({"role": role, "parts": [{"text": msg.text}]})
 
-    response = _generate_with_fallback(
+    response = await _generate_with_fallback(
         client=client,
         contents=contents,
         config={"system_instruction": system_prompt},

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { AppState, ChatMessage } from "@/lib/types";
 import {
   identifyObject,
@@ -36,15 +36,23 @@ export default function CameraChat() {
   const [researchModel, setResearchModel] = useState<string | null>(null);
   const [personificationModel, setPersonificationModel] = useState<string | null>(null);
   const cameraRef = useRef<CameraFeedHandle>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
 
   // Hold the identify request result while loading animation plays.
   const identifyResultRef = useRef<IdentifyResult | null>(null);
   const identifyPromiseRef = useRef<Promise<IdentifyResult | null> | null>(null);
+  const loadingCompletionStartedRef = useRef(false);
+  const greetingPlaybackSeqRef = useRef(0);
 
   const { startRecording, stopRecording } = useAudioRecorder();
-  const { play } = useAudioPlayer();
+  const { play, speakText } = useAudioPlayer();
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const resetAll = useCallback(() => {
+    greetingPlaybackSeqRef.current += 1;
     setState("CAMERA_READY");
     setMessages([]);
     setEntityName(null);
@@ -53,8 +61,10 @@ export default function CameraChat() {
     setVoiceId(null);
     setResearchModel(null);
     setPersonificationModel(null);
+    messagesRef.current = [];
     identifyResultRef.current = null;
     identifyPromiseRef.current = null;
+    loadingCompletionStartedRef.current = false;
   }, []);
 
   const handleShutterTap = () => {
@@ -65,6 +75,7 @@ export default function CameraChat() {
     setState("CAPTURED_LOADING");
 
     identifyResultRef.current = null;
+    loadingCompletionStartedRef.current = false;
 
     // Fire off identify immediately; loading completion waits on this promise.
     if (photo) {
@@ -83,6 +94,9 @@ export default function CameraChat() {
   };
 
   const handleLoadingComplete = useCallback(async () => {
+    if (loadingCompletionStartedRef.current) return;
+    loadingCompletionStartedRef.current = true;
+
     const identifyPromise = identifyPromiseRef.current;
     const result = identifyPromise
       ? await identifyPromise
@@ -96,34 +110,74 @@ export default function CameraChat() {
       setVoiceId(result.voice_id);
       setResearchModel(result.research_model || null);
       setPersonificationModel(result.personification_model || null);
-      setMessages([
+      const welcomeMessages: ChatMessage[] = [
         { id: "welcome", role: "assistant", text: result.greeting },
-      ]);
+      ];
+      messagesRef.current = welcomeMessages;
+      setMessages(welcomeMessages);
+
+      setState("TALKING_READY");
+
+      if (result.greeting.trim()) {
+        const playbackSeq = greetingPlaybackSeqRef.current + 1;
+        greetingPlaybackSeqRef.current = playbackSeq;
+
+        void (async () => {
+          if (greetingPlaybackSeqRef.current !== playbackSeq) return;
+          setState("SPEAKING");
+          try {
+            if (result.voice_id) {
+              const greetingAudio = await textToSpeech(
+                result.greeting,
+                result.entity,
+                result.voice_id
+              );
+              if (greetingPlaybackSeqRef.current !== playbackSeq) return;
+              await play(greetingAudio);
+            } else {
+              await speakText(result.greeting);
+            }
+          } catch {
+            await speakText(result.greeting);
+          } finally {
+            if (greetingPlaybackSeqRef.current === playbackSeq) {
+              setState("TALKING_READY");
+            }
+          }
+        })();
+      }
+      return;
     } else {
       setEntityName("Mystery Thing");
       setResearchModel("fallback");
       setPersonificationModel("fallback");
-      setMessages([
+      const fallbackMessages: ChatMessage[] = [
         {
           id: "welcome",
           role: "assistant",
           text: "Hi! I'm a Mystery Thing! 🤔 Ask me anything!",
         },
-      ]);
+      ];
+      messagesRef.current = fallbackMessages;
+      setMessages(fallbackMessages);
     }
     setState("TALKING_READY");
-  }, []);
+  }, [play, speakText]);
 
   // Shared pipeline: take user text, get AI reply, play TTS
   const processUserMessage = useCallback(
     async (userText: string) => {
+      const trimmedUserText = userText.trim();
+      if (!trimmedUserText) return;
+
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "user",
-        text: userText,
+        text: trimmedUserText,
       };
 
-      const updatedMessages = [...messages, userMsg];
+      const updatedMessages = [...messagesRef.current, userMsg];
+      messagesRef.current = updatedMessages;
       setMessages(updatedMessages);
 
       const entity = entityName || "Mystery Thing";
@@ -137,7 +191,9 @@ export default function CameraChat() {
         return;
       }
 
-      const history = updatedMessages.map((m) => ({ role: m.role, text: m.text }));
+      const history = updatedMessages
+        .slice(-12)
+        .map((m) => ({ role: m.role, text: m.text }));
 
       try {
         const { response } = await chat(entity, profile, history);
@@ -146,15 +202,18 @@ export default function CameraChat() {
           role: "assistant",
           text: response,
         };
-        setMessages((p) => [...p, assistantMsg]);
+        messagesRef.current = [...messagesRef.current, assistantMsg];
+        setMessages(messagesRef.current);
 
-        if (vid) {
-          try {
+        try {
+          if (vid) {
             const audioBlob = await textToSpeech(response, entity, vid);
             await play(audioBlob);
-          } catch {
-            // TTS failed — still show the text response
+          } else {
+            await speakText(response);
           }
+        } catch {
+          await speakText(response);
         }
       } catch {
         const fallback: ChatMessage = {
@@ -162,12 +221,13 @@ export default function CameraChat() {
           role: "assistant",
           text: "Hmm, I got confused! Can you try again?",
         };
-        setMessages((p) => [...p, fallback]);
+        messagesRef.current = [...messagesRef.current, fallback];
+        setMessages(messagesRef.current);
       } finally {
         setState("TALKING_READY");
       }
     },
-    [messages, entityName, characterProfile, voiceId, play]
+    [entityName, characterProfile, voiceId, play, speakText]
   );
 
   const handleMicTap = async () => {
@@ -199,8 +259,8 @@ export default function CameraChat() {
 
   const handleTextSubmit = useCallback(
     async (text: string) => {
-      if (state !== "TALKING_READY" || !text.trim()) return;
-      await processUserMessage(text.trim());
+      if (state !== "TALKING_READY") return;
+      await processUserMessage(text);
     },
     [state, processUserMessage]
   );
