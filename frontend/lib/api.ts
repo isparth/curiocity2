@@ -7,6 +7,9 @@ export interface CharacterProfile {
   speaking_style: string;
   voice_description: string;
   fun_facts: string[];
+  research_summary?: string;
+  canonical_facts?: string[];
+  source_urls?: string[];
 }
 
 export interface IdentifyResult {
@@ -44,6 +47,16 @@ export async function chat(
   });
   if (!res.ok) throw new Error("Failed to get chat response");
   return res.json() as Promise<{ response: string }>;
+}
+
+export async function recharacterize(entity: string): Promise<IdentifyResult> {
+  const res = await fetch(`${API_URL}/api/recharacterize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entity }),
+  });
+  if (!res.ok) throw new Error("Failed to regenerate character");
+  return res.json();
 }
 
 export async function speechToText(audioBlob: Blob) {

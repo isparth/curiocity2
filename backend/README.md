@@ -27,6 +27,7 @@ Create a `.env` file with:
 
 ```
 GEMINI_API_KEY=        # Google AI Studio (https://aistudio.google.com/apikey)
+GEMINI_MODEL=gemini-2.5-flash  # optional override
 DEEPGRAM_API_KEY=      # Deepgram (https://console.deepgram.com)
 ELEVENLABS_API_KEY=    # ElevenLabs (https://elevenlabs.io)
 ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # fallback voice
@@ -40,7 +41,7 @@ Health check. Returns `{"status": "ok"}`.
 ### `POST /api/identify`
 Takes a photo, runs a 4-step agentic pipeline:
 1. **Identify** — Gemini Vision identifies the object/landmark
-2. **Research** — Gemini researches its history, facts, and significance
+2. **Research** — Gemini performs web-grounded research for history, facts, and significance
 3. **Character Creation** — Gemini builds a full character profile (name, backstory, personality, speaking style, fun facts)
 4. **Voice Design** — ElevenLabs creates a custom voice matching the character
 

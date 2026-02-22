@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import type { AppState, ChatMessage } from "@/lib/types";
 import {
   identifyObject,
+  recharacterize,
   chat,
   speechToText,
   textToSpeech,
@@ -16,6 +17,8 @@ import TopBar from "./TopBar";
 import LoadingOverlay from "./LoadingOverlay";
 import ChatPane from "./ChatPane";
 
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+
 export default function CameraChat() {
   const [state, setState] = useState<AppState>("CAMERA_READY");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -25,6 +28,9 @@ export default function CameraChat() {
     useState<CharacterProfile | null>(null);
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const cameraRef = useRef<CameraFeedHandle>(null);
+  const loadingOverlayDoneRef = useRef(false);
+  const identifyDoneRef = useRef(false);
+  const processingMessageRef = useRef(false);
 
   // Ref to hold the identify result while the loading overlay animates
   const identifyResultRef = useRef<{
@@ -37,6 +43,35 @@ export default function CameraChat() {
   const { startRecording, stopRecording } = useAudioRecorder();
   const { play } = useAudioPlayer();
 
+  const speakWithBrowserVoice = useCallback(
+    (text: string, voiceDescription?: string): Promise<void> => {
+      return new Promise((resolve) => {
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+          resolve();
+          return;
+        }
+
+        const desc = (voiceDescription || "").toLowerCase();
+        let lang = "en-US";
+        if (desc.includes("irish")) lang = "en-IE";
+        else if (desc.includes("british")) lang = "en-GB";
+        else if (desc.includes("australian")) lang = "en-AU";
+        else if (desc.includes("indian")) lang = "en-IN";
+        else if (desc.includes("french")) lang = "fr-FR";
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang;
+        utterance.rate = desc.includes("slow") ? 0.88 : 0.95;
+        utterance.pitch = desc.includes("deep") ? 0.9 : 1.0;
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      });
+    },
+    []
+  );
+
   const resetAll = useCallback(() => {
     setState("CAMERA_READY");
     setMessages([]);
@@ -45,36 +80,20 @@ export default function CameraChat() {
     setCharacterProfile(null);
     setVoiceId(null);
     identifyResultRef.current = null;
+    loadingOverlayDoneRef.current = false;
+    identifyDoneRef.current = false;
+    processingMessageRef.current = false;
   }, []);
 
-  const handleShutterTap = () => {
-    if (state !== "CAMERA_READY") return;
+  const maybeEnterTalkingState = useCallback(() => {
+    if (!loadingOverlayDoneRef.current || !identifyDoneRef.current) return;
 
-    const photo = cameraRef.current?.capturePhoto() ?? null;
-    setCapturedPhoto(photo);
-    setState("CAPTURED_LOADING");
-
-    // Fire off the identify call immediately (runs behind loading overlay)
-    if (photo) {
-      identifyObject(photo)
-        .then((result) => {
-          identifyResultRef.current = result;
-        })
-        .catch(() => {
-          identifyResultRef.current = null;
-        });
-    }
-  };
-
-  const handleLoadingComplete = useCallback(() => {
     const result = identifyResultRef.current;
     if (result) {
       setEntityName(result.entity);
       setCharacterProfile(result.character_profile);
       setVoiceId(result.voice_id);
-      setMessages([
-        { id: "welcome", role: "assistant", text: result.greeting },
-      ]);
+      setMessages([{ id: "welcome", role: "assistant", text: result.greeting }]);
     } else {
       setEntityName("Mystery Thing");
       setMessages([
@@ -88,62 +107,136 @@ export default function CameraChat() {
     setState("TALKING_READY");
   }, []);
 
+  const handleShutterTap = () => {
+    if (state !== "CAMERA_READY") return;
+
+    const photo = cameraRef.current?.capturePhoto() ?? null;
+    setCapturedPhoto(photo);
+    setState("CAPTURED_LOADING");
+    loadingOverlayDoneRef.current = false;
+    identifyDoneRef.current = false;
+    identifyResultRef.current = null;
+
+    // Fire off the identify call immediately (runs behind loading overlay)
+    if (photo) {
+      identifyObject(photo)
+        .then((result) => {
+          identifyResultRef.current = result;
+          identifyDoneRef.current = true;
+          maybeEnterTalkingState();
+        })
+        .catch(() => {
+          identifyResultRef.current = null;
+          identifyDoneRef.current = true;
+          maybeEnterTalkingState();
+        });
+    } else {
+      identifyDoneRef.current = true;
+    }
+  };
+
+  const handleLoadingComplete = useCallback(() => {
+    loadingOverlayDoneRef.current = true;
+    maybeEnterTalkingState();
+  }, [maybeEnterTalkingState]);
+
+  const handleRenameEntity = useCallback(async () => {
+    if (state === "CAPTURED_LOADING") return;
+    const current = entityName || "";
+    const replacement = window.prompt("Who is this really?", current);
+    if (!replacement || !replacement.trim()) return;
+
+    setState("SPEAKING");
+    try {
+      const result = await recharacterize(replacement.trim());
+      setEntityName(result.entity);
+      setCharacterProfile(result.character_profile);
+      setVoiceId(result.voice_id);
+      setMessages([{ id: `welcome-${Date.now()}`, role: "assistant", text: result.greeting }]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: "I couldn't update my identity right now. Please try again.",
+        },
+      ]);
+    } finally {
+      setState("TALKING_READY");
+    }
+  }, [entityName, state]);
+
   // Shared pipeline: take user text, get AI reply, play TTS
   const processUserMessage = useCallback(
     async (userText: string) => {
+      if (processingMessageRef.current) return;
+      processingMessageRef.current = true;
+
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "user",
         text: userText,
       };
 
-      setMessages((prev) => {
-        const updated = [...prev, userMsg];
-        const entity = entityName || "Mystery Thing";
-        const profile = characterProfile;
-        const vid = voiceId;
+      const entity = entityName || "Mystery Thing";
+      const profile = characterProfile;
+      const vid = voiceId;
 
-        setState("SPEAKING");
+      setMessages((prev) => [...prev, userMsg]);
+      setState("SPEAKING");
 
-        if (profile) {
-          const history = updated.map((m) => ({ role: m.role, text: m.text }));
+      if (!profile) {
+        setState("TALKING_READY");
+        processingMessageRef.current = false;
+        return;
+      }
 
-          chat(entity, profile, history)
-            .then(async ({ response }) => {
-              const assistantMsg: ChatMessage = {
-                id: `assistant-${Date.now()}`,
-                role: "assistant",
-                text: response,
-              };
-              setMessages((p) => [...p, assistantMsg]);
+      try {
+        const history = [...messages, userMsg].map((m) => ({
+          role: m.role,
+          text: m.text,
+        }));
+        const { response } = await chat(entity, profile, history);
 
-              if (vid) {
-                try {
-                  const audioBlob = await textToSpeech(response, entity, vid);
-                  await play(audioBlob);
-                } catch {
-                  // TTS failed — still show the text response
-                }
-              }
-              setState("TALKING_READY");
-            })
-            .catch(() => {
-              const fallback: ChatMessage = {
-                id: `assistant-${Date.now()}`,
-                role: "assistant",
-                text: "Hmm, I got confused! Can you try again?",
-              };
-              setMessages((p) => [...p, fallback]);
-              setState("TALKING_READY");
-            });
-        } else {
-          setState("TALKING_READY");
+        const assistantMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: response,
+        };
+        setMessages((p) => [...p, assistantMsg]);
+
+        if (vid) {
+          const shouldPreferBrowserAccent =
+            vid === DEFAULT_VOICE_ID &&
+            /irish|british|australian|indian|french/.test(
+              (profile.voice_description || "").toLowerCase()
+            );
+
+          if (shouldPreferBrowserAccent) {
+            await speakWithBrowserVoice(response, profile.voice_description);
+          } else {
+            try {
+              const audioBlob = await textToSpeech(response, entity, vid);
+              await play(audioBlob);
+            } catch {
+              await speakWithBrowserVoice(response, profile.voice_description);
+            }
+          }
         }
-
-        return updated;
-      });
+      } catch {
+        const fallback: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: "Hmm, I got confused! Can you try again?",
+        };
+        setMessages((p) => [...p, fallback]);
+      } finally {
+        setState("TALKING_READY");
+        processingMessageRef.current = false;
+      }
     },
-    [entityName, characterProfile, voiceId, play]
+    [entityName, characterProfile, voiceId, play, messages, speakWithBrowserVoice]
   );
 
   const handleMicTap = async () => {
@@ -199,6 +292,7 @@ export default function CameraChat() {
       <TopBar
         entityName={entityName}
         onRestart={resetAll}
+        onRename={showChat ? handleRenameEntity : undefined}
         showRestart={!showLiveCamera}
       />
 

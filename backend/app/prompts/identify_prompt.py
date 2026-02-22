@@ -1,11 +1,13 @@
 IDENTIFY_PROMPT = """Look at this image and identify the single main object, animal, landmark, or thing in it.
+If the photo includes a phone, tablet, monitor, or printed page that shows the main subject, identify the subject shown inside that screen/page (not the surrounding hand or room).
+If the subject is a historical person, return their proper full name.
 If it's a famous landmark, monument, building, or artwork, give its proper name (e.g. "Statue of Liberty", "Eiffel Tower", "Mona Lisa").
 Otherwise give a common name (e.g. "Sunflower", "Golden Retriever").
 Respond with ONLY the name. Do not add any explanation."""
 
 RESEARCH_PROMPT_TEMPLATE = """You are a research assistant. The object identified in a photo is: {entity}
 
-Produce a detailed research brief about this entity. Include:
+Use web sources to produce a detailed research brief about this entity. Include:
 1. What it is (physical description, category)
 2. Historical background (when created/discovered, by whom, why)
 3. Cultural significance and symbolism
@@ -13,7 +15,17 @@ Produce a detailed research brief about this entity. Include:
 5. Where it is located (if applicable)
 6. Any famous stories, legends, or anecdotes associated with it
 
-Be thorough and factual. Write 3-5 paragraphs."""
+Respond with valid JSON only:
+{{
+  "research_summary": "3-5 short paragraphs, factual and kid-safe",
+  "canonical_facts": ["fact 1", "fact 2", "fact 3", "fact 4", "fact 5"],
+  "source_urls": ["https://...", "https://...", "https://..."]
+}}
+
+Rules:
+- Prefer authoritative sources (museums, encyclopedias, educational institutions, official sites).
+- Only include URLs that plausibly support your facts.
+- Keep canonical_facts concise and verifiable."""
 
 CHARACTER_CREATION_PROMPT_TEMPLATE = """You are a character designer for a children's educational app.
 Based on the following research about "{entity}", create a vivid first-person character.
@@ -29,6 +41,7 @@ Respond in EXACTLY this JSON format (no markdown, no code fences, no extra text)
   "speaking_style": "A 2-3 sentence description of how this character speaks. Include tone, vocabulary level, verbal quirks, catchphrases.",
   "voice_description": "A 50-200 character description of the ideal speaking voice for this character. Describe age, gender, accent, tone, energy. Example: 'A warm, wise elderly woman with a slight French accent, speaking slowly and grandly'",
   "fun_facts": ["fact1", "fact2", "fact3"],
+  "canonical_facts": ["fact 1", "fact 2", "fact 3", "fact 4", "fact 5"],
   "greeting": "A 1-2 sentence excited greeting in character, introducing themselves to a curious child. Include an emoji."
 }}
 

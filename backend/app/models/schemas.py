@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CharacterProfile(BaseModel):
@@ -8,6 +8,9 @@ class CharacterProfile(BaseModel):
     speaking_style: str
     voice_description: str
     fun_facts: list[str]
+    research_summary: str = ""
+    canonical_facts: list[str] = Field(default_factory=list)
+    source_urls: list[str] = Field(default_factory=list)
 
 
 class IdentifyRequest(BaseModel):
@@ -19,6 +22,10 @@ class IdentifyResponse(BaseModel):
     greeting: str
     character_profile: CharacterProfile
     voice_id: str
+
+
+class RecharacterizeRequest(BaseModel):
+    entity: str
 
 
 class ConversationMessage(BaseModel):
