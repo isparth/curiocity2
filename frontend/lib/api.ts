@@ -14,6 +14,8 @@ export interface IdentifyResult {
   greeting: string;
   character_profile: CharacterProfile;
   voice_id: string;
+  research_model?: string;
+  personification_model?: string;
 }
 
 export async function identifyObject(

@@ -2,15 +2,14 @@ IDENTIFY_PROMPT = """You are an expert visual identifier.
 Identify the SINGLE main subject in this image with the highest possible specificity.
 
 Rules:
+- FIRST, analyze the image in the "visual_analysis" field. Describe the person's clothing, era, facial features, context, and READ any text/inscriptions on pedestals or plaques.
 - Prefer exact proper names for famous people, statues, landmarks, monuments, artworks, logos, and products.
-- If the image shows a statue/portrait of a known person, include the person name plus medium when relevant
-  (examples: "Statue of Abraham Lincoln", "Portrait of Frida Kahlo").
-- For animals/plants, prefer specific species/breed when visually clear.
-- If exact identity is uncertain, give the most specific honest label you can (never generic labels like "thing").
+- If the image shows a statue/portrait of a known person, include the person name plus medium when relevant.
 - Do not invent details that are not visually supported.
 
 Respond as STRICT JSON (no markdown):
 {
+  "visual_analysis": "Detailed description of the subject, era, clothing, and any visible text...",
   "entity": "best single label",
   "entity_type": "person|statue|landmark|monument|artwork|animal|plant|building|vehicle|logo|product|food|object|other",
   "specificity": "exact|specific|generic",

@@ -19,6 +19,8 @@ class IdentifyResponse(BaseModel):
     greeting: str
     character_profile: CharacterProfile
     voice_id: str
+    research_model: str | None = None
+    personification_model: str | None = None
 
 
 class ConversationMessage(BaseModel):

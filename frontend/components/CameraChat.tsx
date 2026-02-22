@@ -21,6 +21,8 @@ type IdentifyResult = {
   greeting: string;
   character_profile: CharacterProfile;
   voice_id: string;
+  research_model?: string;
+  personification_model?: string;
 };
 
 export default function CameraChat() {
@@ -31,6 +33,8 @@ export default function CameraChat() {
   const [characterProfile, setCharacterProfile] =
     useState<CharacterProfile | null>(null);
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [researchModel, setResearchModel] = useState<string | null>(null);
+  const [personificationModel, setPersonificationModel] = useState<string | null>(null);
   const cameraRef = useRef<CameraFeedHandle>(null);
 
   // Hold the identify request result while loading animation plays.
@@ -47,6 +51,8 @@ export default function CameraChat() {
     setCapturedPhoto(null);
     setCharacterProfile(null);
     setVoiceId(null);
+    setResearchModel(null);
+    setPersonificationModel(null);
     identifyResultRef.current = null;
     identifyPromiseRef.current = null;
   }, []);
@@ -88,11 +94,15 @@ export default function CameraChat() {
       setEntityName(result.entity);
       setCharacterProfile(result.character_profile);
       setVoiceId(result.voice_id);
+      setResearchModel(result.research_model || null);
+      setPersonificationModel(result.personification_model || null);
       setMessages([
         { id: "welcome", role: "assistant", text: result.greeting },
       ]);
     } else {
       setEntityName("Mystery Thing");
+      setResearchModel("fallback");
+      setPersonificationModel("fallback");
       setMessages([
         {
           id: "welcome",
@@ -215,6 +225,13 @@ export default function CameraChat() {
         onRestart={resetAll}
         showRestart={!showLiveCamera}
       />
+
+      {(researchModel || personificationModel) && (
+        <div className="fixed right-3 top-3 z-40 pointer-events-none text-[10px] leading-tight text-white/45 text-right">
+          <div>research: {researchModel || "n/a"}</div>
+          <div>personify: {personificationModel || "n/a"}</div>
+        </div>
+      )}
 
       {state === "CAMERA_READY" && (
         <div className="fixed inset-0 z-10 flex items-end justify-center pb-16">

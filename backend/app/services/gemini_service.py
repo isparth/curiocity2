@@ -20,10 +20,10 @@ from app.services.elevenlabs_service import design_voice
 
 logger = logging.getLogger(__name__)
 
-MODEL = settings.gemini_model.strip() or "gemini-2.5-flash"
+MODEL = settings.gemini_model.strip() or "gemini-3.1-pro-preview"
 RESEARCH_MODEL = (
     settings.gemini_research_model.strip()
-    or "deep-research-pro-preview-12-2025"
+    or "gemini-3.1-pro-preview"
 )
 MODEL_FALLBACKS = [
     MODEL,

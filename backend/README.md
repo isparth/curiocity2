@@ -49,7 +49,7 @@ Takes a photo, runs a 4-step agentic pipeline:
 
 **Request:** `{ "image": "data:image/jpeg;base64,..." }`
 
-**Response:** `{ "entity", "greeting", "character_profile", "voice_id" }`
+**Response:** `{ "entity", "greeting", "character_profile", "voice_id", "research_model", "personification_model" }`
 
 ### `POST /api/chat`
 Generates an in-character response using the full character profile.

@@ -55,6 +55,8 @@ async def identify(req: IdentifyRequest):
             greeting="Hi! I'm a Mystery Thing! 🤔 Ask me anything!",
             character_profile=fallback_profile,
             voice_id=settings.elevenlabs_voice_id,
+            research_model="fallback",
+            personification_model="fallback",
         )
 
 
