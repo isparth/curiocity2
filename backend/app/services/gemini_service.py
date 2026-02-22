@@ -85,6 +85,18 @@ def _extract_identify_data(text: str) -> tuple[str, list[str], str, float]:
         return _clean_label(text), [], "", 0.0
 
 
+def _build_voice_design_description(
+    profile: CharacterProfile, entity: str
+) -> str:
+    traits = ", ".join(profile.personality_traits[:5])
+    return (
+        f"{profile.voice_description}. Character name: {profile.name}. "
+        f"Entity: {entity}. Speaking style: {profile.speaking_style}. "
+        f"Personality traits: {traits}. The generated voice must strongly match "
+        "the described gender presentation, accent/region, age, tone, pacing, and energy."
+    )
+
+
 def _build_identify_contents(mime_type: str, image_bytes: bytes, prompt: str) -> list[dict]:
     return [
         {
@@ -121,7 +133,7 @@ def _merge_generate_config(config: dict | None = None, use_google_search: bool =
     else:
         merged = dict(config or {})
 
-    if use_google_search and settings.gemini_enable_google_search:
+    if use_google_search:
         tools = list(merged.get("tools", []))
         has_google_search_tool = any(
             isinstance(tool, dict) and "google_search" in tool
@@ -236,6 +248,7 @@ async def identify_research_and_create(image_data_uri: str) -> IdentifyResponse:
         client=client,
         contents=RESEARCH_PROMPT_TEMPLATE.format(entity=entity),
         preferred_models=[RESEARCH_MODEL],
+        use_google_search=True,
     )
     research = research_response.text.strip()
 
@@ -261,7 +274,7 @@ async def identify_research_and_create(image_data_uri: str) -> IdentifyResponse:
     # --- STEP 4: Design a custom voice ---
     try:
         voice_id = await design_voice(
-            voice_description=profile.voice_description,
+            voice_description=_build_voice_design_description(profile, entity),
             preview_text=greeting,
         )
     except Exception:
@@ -273,6 +286,8 @@ async def identify_research_and_create(image_data_uri: str) -> IdentifyResponse:
         greeting=greeting,
         character_profile=profile,
         voice_id=voice_id,
+        research_model=RESEARCH_MODEL,
+        personification_model=MODEL,
     )
 
 
@@ -298,5 +313,6 @@ async def generate_chat_response(
         client=client,
         contents=contents,
         config={"system_instruction": system_prompt},
+        use_google_search=False,
     )
     return response.text.strip()
