@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -17,6 +19,7 @@ from app.services.deepgram_service import transcribe
 from app.services.elevenlabs_service import generate_speech
 
 app = FastAPI(title="CurioCity API")
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +41,7 @@ async def identify(req: IdentifyRequest):
         result = await identify_research_and_create(req.image)
         return result
     except Exception:
+        logger.exception("/api/identify failed; returning fallback character")
         fallback_profile = CharacterProfile(
             name="Mystery Thing",
             backstory="I'm a mystery! Nobody knows where I came from, but I love making new friends and learning about the world.",

@@ -25,7 +25,14 @@ export function useAudioPlayer() {
         resolve();
       };
 
-      audio.play();
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {
+          URL.revokeObjectURL(url);
+          setIsPlaying(false);
+          resolve();
+        });
+      }
     });
   }, []);
 

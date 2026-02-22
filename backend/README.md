@@ -27,6 +27,9 @@ Create a `.env` file with:
 
 ```
 GEMINI_API_KEY=        # Google AI Studio (https://aistudio.google.com/apikey)
+GEMINI_MODEL=gemini-3.1-pro-preview  # optional; default is gemini-3.1-pro-preview
+GEMINI_RESEARCH_MODEL=gemini-3.1-pro-preview  # optional; used for step 2 research
+GEMINI_ENABLE_GOOGLE_SEARCH=true  # optional; lets identify step use Gemini Google Search tool
 DEEPGRAM_API_KEY=      # Deepgram (https://console.deepgram.com)
 ELEVENLABS_API_KEY=    # ElevenLabs (https://elevenlabs.io)
 ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # fallback voice

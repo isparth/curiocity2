@@ -1,7 +1,33 @@
-IDENTIFY_PROMPT = """Look at this image and identify the single main object, animal, landmark, or thing in it.
-If it's a famous landmark, monument, building, or artwork, give its proper name (e.g. "Statue of Liberty", "Eiffel Tower", "Mona Lisa").
-Otherwise give a common name (e.g. "Sunflower", "Golden Retriever").
-Respond with ONLY the name. Do not add any explanation."""
+IDENTIFY_PROMPT = """You are an expert visual identifier.
+Identify the SINGLE main subject in this image with the highest possible specificity.
+
+Rules:
+- Prefer exact proper names for famous people, statues, landmarks, monuments, artworks, logos, and products.
+- If the image shows a statue/portrait of a known person, include the person name plus medium when relevant
+  (examples: "Statue of Abraham Lincoln", "Portrait of Frida Kahlo").
+- For animals/plants, prefer specific species/breed when visually clear.
+- If exact identity is uncertain, give the most specific honest label you can (never generic labels like "thing").
+- Do not invent details that are not visually supported.
+
+Respond as STRICT JSON (no markdown):
+{
+  "entity": "best single label",
+  "entity_type": "person|statue|landmark|monument|artwork|animal|plant|building|vehicle|logo|product|food|object|other",
+  "specificity": "exact|specific|generic",
+  "confidence": 0.0,
+  "alternatives": ["alt1", "alt2"]
+}"""
+
+IDENTIFY_DISAMBIGUATE_PROMPT_TEMPLATE = """You are resolving the most accurate label for the main subject in an image.
+
+Candidate labels:
+{candidates}
+
+Rules:
+- Choose the best label that matches the visible subject.
+- Prefer exact proper names for people/statues/landmarks/artworks when justified by visual evidence.
+- If none are fully correct, output a better, more specific label.
+- Output ONLY the final label, no explanation."""
 
 RESEARCH_PROMPT_TEMPLATE = """You are a research assistant. The object identified in a photo is: {entity}
 
